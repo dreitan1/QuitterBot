@@ -266,7 +266,60 @@ def run_bot(state):
 
     @commands.command(name="exchange")
     async def exchange(cxt):
-        await cxt.message.channel.send("TODO")
+        user = cxt.message.author.name
+        with open(registry, 'r') as f:
+            contents = f.read()
+            if user not in contents:
+                await cxt.message.channel.send("You are not registered. Register with &register")
+                return
+        discord_user = cxt.guild.get_member_named(user)
+        if discord_user is None:
+            await cxt.message.channel.send("User " + user + " not found")
+            return
+        
+        num_quitters = 0
+        num_winners = 0
+        for role in discord_user.roles:
+            if role.name == "quitter":
+                num_quitters = 1
+            elif role.name.startswith("quitter x"):
+                try:
+                    num = int(role.name.split("x")[1])
+                    if num > num_quitters:
+                        num_quitters = num
+                except:
+                    pass
+            elif role.name == "winner":
+                num_winners = 1
+            elif role.name.startswith("winner x"):
+                try:
+                    num = int(role.name.split("x")[1])
+                    if num > num_winners:
+                        num_winners = num
+                except:
+                    pass
+        
+        if num_quitters == 0:
+            await cxt.message.channel.send("You have no quitter tags to replace")
+            return
+        if num_winners < 3:
+            await cxt.message.channel.send("You need at least 3 winner tags to exchange for a quitter tag")
+            return
+        
+        # Remove a quitter tag and 3 winner tags
+        for i in range(num_winners, num_winners - 3, -1):
+            role_name = "winner" if i == 1 else f"winner x{i}"
+            role = discord.utils.get(cxt.guild.roles, name=role_name)
+            if role in discord_user.roles:
+                await discord_user.remove_roles(role)
+
+        role_name = "quitter" if num_quitters == 1 else f"quitter x{num_quitters}"
+        role = discord.utils.get(cxt.guild.roles, name=role_name)
+        if role in discord_user.roles:
+            await discord_user.remove_roles(role)
+        
+        await cxt.message.channel.send("Quitter tag exchanged!")
+        return
 
     @commands.command(name="leaderboard")
     async def leaderboard(cxt):
@@ -337,7 +390,7 @@ def run_bot(state):
             with thread_lock:
                 await cxt.message.channel.send("Reloading...")
                 state.reload_event.set()
-                kill()
+                exit(0)
 
     @commands.command(name="kill")
     async def kill(cxt):

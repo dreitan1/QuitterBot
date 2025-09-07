@@ -38,7 +38,9 @@ if __name__ == "__main__":
     while 1:
         state.reload_event.wait()
         state.reload_event.clear()
-        
-        hotreload()
+        bot_thread.join()
+
+        bot_thread = threading.Thread(target=hotreload)
+        bot_thread.start()
 
 
