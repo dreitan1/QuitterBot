@@ -112,7 +112,7 @@ def run_bot(state):
                                 task = asyncio.create_task(add_role_after_delay(msg, discord_user, "winner", num, delay))
                                 scheduled_tasks[discord_user.id] = task
                                 previous_user = games_by_time.get((timestamp, duration), [])[0] if discord_user.id == games_by_time.get((timestamp, duration), [])[1] else games_by_time.get((timestamp, duration), [])[1]
-                                previous_user = msg.guild.get_user(previous_user)
+                                previous_user = msg.guild.get_member(previous_user)
                                 num = 0
                                 for role in previous_user.roles:
                                     if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
@@ -154,7 +154,7 @@ def run_bot(state):
                             task = asyncio.create_task(add_role_after_delay(msg, discord_user, "quitter", num, delay))
                             scheduled_tasks[discord_user.id] = task
                             previous_user = games_by_time.get((timestamp, duration), [])[0] if discord_user.id == games_by_time.get((timestamp, duration), [])[1] else games_by_time.get((timestamp, duration), [])[1]
-                            previous_user = msg.guild.get_user(previous_user)
+                            previous_user = msg.guild.get_member(previous_user)
                             num = 0
                             for role in previous_user.roles:
                                 if role.name.startswith("quitter x") and int(role.name.split("x")[1]) + 1 > num:
