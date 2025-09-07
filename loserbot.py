@@ -404,6 +404,6 @@ def run_bot(state):
     client.add_command(leaderboard)
     client.add_command(reload)
     client.add_command(kill)
-    # client.add_command(test)
+    client.add_command(test)
 
     client.run(bot_key)
