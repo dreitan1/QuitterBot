@@ -36,6 +36,13 @@ def run_bot(state):
         print('We have logged in as {0.user}'.format(client))
         await client.change_presence(status=discord.Status.online, activity=discord.Activity(type=discord.ActivityType.watching, name="&help"))
 
+    @client.event
+    async def on_memeber_join(user):
+        role = discord.utils.get(user.guild.roles, name=f"gamer")
+        if role:
+            await user.add_roles(role)
+        
+
     async def add_role_after_delay(cxt, user, pref, num, delay):
         with thread_lock:
             try:
