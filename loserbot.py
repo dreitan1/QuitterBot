@@ -46,27 +46,26 @@ def run_bot(state):
         
 
     async def add_role_after_delay(cxt, user, pref, num, delay):
-        with thread_lock:
-            try:
-                await asyncio.sleep(delay)
-                if num == 0:
-                    role = discord.utils.get(user.guild.roles, name=f"{pref}")
-                else:
-                    # prev_role = f"{pref} x{num - 1}" if num != "1" else None
-                    # if prev_role:
-                    #     prev_role = discord.utils.get(user.guild.roles, name=prev_role)
-                    #     if prev_role in user.roles:
-                    #         await user.remove_roles(prev_role)
-                    role = discord.utils.get(user.guild.roles, name=f"{pref} x{num}")
-                if role:
-                    await user.add_roles(role)
-                else:
-                    cxt.guild.create_role(name=role)
-                    await user.add_roles(role)
-                
-                await discord.utils.get(cxt.guild.channels, name=log_channel).send(f"Assigned role {role.name} to {user.name}")
-            except asyncio.CancelledError:
-                pass
+        try:
+            await asyncio.sleep(delay)
+            if num == 0:
+                role = discord.utils.get(user.guild.roles, name=f"{pref}")
+            else:
+                # prev_role = f"{pref} x{num - 1}" if num != "1" else None
+                # if prev_role:
+                #     prev_role = discord.utils.get(user.guild.roles, name=prev_role)
+                #     if prev_role in user.roles:
+                #         await user.remove_roles(prev_role)
+                role = discord.utils.get(user.guild.roles, name=f"{pref} x{num}")
+            if role:
+                await user.add_roles(role)
+            else:
+                cxt.guild.create_role(name=role)
+                await user.add_roles(role)
+            
+            await discord.utils.get(cxt.guild.channels, name=log_channel).send(f"Assigned role {role.name} to {user.name}")
+        except asyncio.CancelledError:
+            pass
 
     @client.event
     async def on_message(msg):
