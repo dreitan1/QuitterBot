@@ -40,7 +40,9 @@ def run_bot(state):
     async def on_memeber_join(user):
         role = discord.utils.get(user.guild.roles, name=f"gamer")
         if role:
-            await user.add_roles(role)
+            await user.add_roles(role)            
+        await discord.utils.get(user.guild.channels, name=log_channel).send(f"Welcome {user.name}!")
+
         
 
     async def add_role_after_delay(cxt, user, pref, num, delay):
