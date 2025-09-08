@@ -37,13 +37,12 @@ def run_bot(state):
         await client.change_presence(status=discord.Status.online, activity=discord.Activity(type=discord.ActivityType.watching, name="&help"))
 
     @client.event
-    async def on_memeber_join(user):
-        role = discord.utils.get(user.guild.roles, name=f"gamer")
+    async def on_member_join(user):
+        role = discord.utils.get(user.guild.roles, name="gamer")
+        print("New member joined: " + user.name)
         if role:
             await user.add_roles(role)            
-        await discord.utils.get(user.guild.channels, name=log_channel).send(f"Welcome {user.name}!")
-
-        
+        await discord.utils.get(user.guild.channels, name="welcome").send(f"Welcome {user.name}!")
 
     async def add_role_after_delay(cxt, user, pref, num, delay):
         try:
