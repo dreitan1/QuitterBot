@@ -50,11 +50,6 @@ def run_bot(state):
             if num == 0:
                 role = discord.utils.get(user.guild.roles, name=f"{pref}")
             else:
-                # prev_role = f"{pref} x{num - 1}" if num != "1" else None
-                # if prev_role:
-                #     prev_role = discord.utils.get(user.guild.roles, name=prev_role)
-                #     if prev_role in user.roles:
-                #         await user.remove_roles(prev_role)
                 role = discord.utils.get(user.guild.roles, name=f"{pref} x{num}")
             if role:
                 await user.add_roles(role)
@@ -72,7 +67,7 @@ def run_bot(state):
 
     @client.event
     async def on_message(msg):
-        # If an update was sent to the match_history channel, update tags appropriately
+        # If an update was sent to the match-history channel, update tags appropriately
         channel = "" if msg.channel is None else msg.channel.name
         for _ in range(1):
             if channel == "match-history" and msg.author.bot:
@@ -96,7 +91,7 @@ def run_bot(state):
 
                 prev = last_games.get(discord_user.id, {})
                 task = scheduled_tasks.pop(discord_user.id, None)
-                if task:
+                if task and prev.get("result", "") == "Defeat":
                     task.cancel()
 
                 print(f"Updating for {name}")
@@ -124,17 +119,20 @@ def run_bot(state):
                                 scheduled_tasks[discord_user.id] = task
                                 previous_user = games_by_time.get((timestamp, duration), [])[0] if discord_user.id == games_by_time.get((timestamp, duration), [])[1] else games_by_time.get((timestamp, duration), [])[1]
                                 previous_user = msg.guild.get_member(previous_user)
-                                num = 0
-                                for role in previous_user.roles:
-                                    if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
-                                        try:
-                                            num = int(role.name.split("x")[1]) + 1
-                                        except:
-                                            pass
-                                    elif role.name == "winner":
-                                        num = 2
-                                task = asyncio.create_task(add_role_after_delay(msg, previous_user, "winner", num, delay))
-                                scheduled_tasks[previous_user.id] = task
+                                prev = last_games.get(previous_user.id, {})
+                                streak = prev.get("streak", 0) + 1 if prev.get("result", "") == "Victory" else 1
+                                if streak == 2 and (timestamp - prev.get("time", (0, 0))[0]).total_second() <= delay
+                                    num = 0
+                                    for role in previous_user.roles:
+                                        if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
+                                            try:
+                                                num = int(role.name.split("x")[1]) + 1
+                                            except:
+                                                pass
+                                        elif role.name == "winner":
+                                            num = 2
+                                    task = asyncio.create_task(add_role_after_delay(msg, previous_user, "winner", num, delay))
+                                    scheduled_tasks[previous_user.id] = task
                             else:
                                 num = 0
                                 for role in discord_user.roles:
@@ -151,7 +149,7 @@ def run_bot(state):
                 elif ":d_2:" in win_check:
                     last_games[discord_user.id] = {"result": "Defeat", "streak": 0, "time": (timestamp, duration)}
                     # Increment quitter tag, remove previous quitter tag and assign incremented one
-                    if len(games_by_time.get((timestamp, duration), [])) > 1:
+                    if len(games_by_time.get((timestamp, duration), [])) > 1 or (task and prev.get("result", "") == "Defeat"):
                         if len(games_by_time.get((timestamp, duration), [])) == 2:
                             num = 0
                             for role in discord_user.roles:
