@@ -65,6 +65,22 @@ def run_bot(state):
         except KeyError:
             pass
 
+    def is_user_registered(name):
+        with open(registry, 'r') as f:
+            contents = f.read()
+            if name not in contents:
+                return False
+        return True
+    
+    def get_user_from_name(name):
+        with open(registry, 'r') as f:
+            contents = f.read()
+            if name in contents:
+                contents = contents.split('\n')
+                user = [line for line in contents if name in line][0].split(',')[1]
+                return user
+        return None
+
     @client.event
     async def on_message(msg):
         # If an update was sent to the match-history channel, update tags appropriately
@@ -72,13 +88,11 @@ def run_bot(state):
         for _ in range(1):
             if channel == "match-history" and msg.author.bot:
                 name = msg.author.name
-                with open(registry, 'r') as f:
-                    contents = f.read()
-                    if name not in contents:
-                        break
-                    else:
-                        contents = contents.split('\n')
-                        user = [line for line in contents if name in line][0].split(',')[1]
+                
+                if is_user_registered(name):
+                    user = get_user_from_name(name)
+                else:
+                    break
                 
                 timestamp = msg.created_at.replace(second=0, microsecond=0)
                 duration = msg.embeds[0].to_dict()['author']['name'][1:msg.embeds[0].to_dict()['author']['name'].find("•")-1]
@@ -198,11 +212,13 @@ def run_bot(state):
         print(cxt.channel.name)
         print("Helping")
         await cxt.message.channel.send("Hi there! I'm LoserBot. I'm here to make sure all League of Legenders are properly dealt with.\n"+
-                                    'Ending on a loss grants stacking "quitter" tags and ending on two wins grants stacking "winner" tags. Feel free to exchange 3 winner tags to remove a quitter tag!\n\n'+
+                                    'Ending on a loss grants stacking "quitter" tags and ending on two wins grants stacking "winner" tags. Feel free to exchange 3 winner tags to remove a quitter tag!\n'+
+                                    'We also now promote gambling! Bet on games, create bounties, or take part in our totally ethical gacha system (coming soon)!!\n\n'+
                                     "&register [NAME]#[TAG] [DISCORD USER]: links a league account with a discord user\n"+
                                     "&unregister [NAME]#[TAG]: unlink league account\n"+
                                     "&exchange: lose a quitter tag in exchange for 3 winner tags, if available\n"+
-                                    "&leaderboard: displays the top quitters/winners")
+                                    "&leaderboard: displays the top quitters/winners\n"+
+                                    "&minecraft: receive the 'miner' role")
 
     @commands.command(name='test')
     async def test(cxt):
@@ -238,11 +254,10 @@ def run_bot(state):
             return
 
         with registry_lock:
-            with open(registry, 'r') as f:
-                contents = f.read()
-                if name in contents:
-                    await cxt.message.channel.send(name + " is already registered")
-                    return
+            if is_user_registered(name):
+                await cxt.message.channel.send(name + " is already registered")
+                return
+            
             with open(registry, 'a') as f:
                 f.write(name + "," + user + '\n')
         
@@ -278,11 +293,10 @@ def run_bot(state):
     @commands.command(name="exchange")
     async def exchange(cxt):
         user = cxt.message.author.name
-        with open(registry, 'r') as f:
-            contents = f.read()
-            if user not in contents:
-                await cxt.message.channel.send("You are not registered. Register with &register")
-                return
+        if not is_user_registered(user):
+            await cxt.message.channel.send("You are not registered. Register with &register")
+            return
+        
         discord_user = cxt.guild.get_member_named(user)
         if discord_user is None:
             await cxt.message.channel.send("User " + user + " not found")
@@ -407,6 +421,13 @@ def run_bot(state):
     async def kill(cxt):
         if cxt.message.author.guild_permissions.administrator or cxt.message.author.id == my_id:
             exit(0)
+
+    @commands.command(name="minecraft")
+    async def minecraft(cxt):
+        user = cxt.message.author
+        role = discord.utils.get(user.guild.roles, name="miner")
+        if role:
+            await user.add_roles(role)
 
     client.add_command(help)
     client.add_command(register)
