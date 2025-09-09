@@ -437,5 +437,6 @@ def run_bot(state):
     client.add_command(reload)
     client.add_command(kill)
     # client.add_command(test)
+    client.add_command(minecraft)
 
     client.run(bot_key)
