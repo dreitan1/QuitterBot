@@ -24,7 +24,7 @@ def run_bot(state):
     log_channel = "bot-testing"
 
     # Delay for 2 hours
-    delay = 1 # 7200
+    delay = 7200
 
     intents = discord.Intents.default()
     intents.message_content = True
@@ -62,8 +62,12 @@ def run_bot(state):
                 cxt.guild.create_role(name=role)
                 await user.add_roles(role)
             
+            del scheduled_tasks[user.id]
+
             await discord.utils.get(cxt.guild.channels, name=log_channel).send(f"Assigned role {role.name} to {user.name}")
         except asyncio.CancelledError:
+            pass
+        except KeyError:
             pass
 
     @client.event
