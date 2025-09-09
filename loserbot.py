@@ -121,7 +121,7 @@ def run_bot(state):
                                 previous_user = msg.guild.get_member(previous_user)
                                 prev = last_games.get(previous_user.id, {})
                                 streak = prev.get("streak", 0) + 1 if prev.get("result", "") == "Victory" else 1
-                                if streak == 2 and (timestamp - prev.get("time", (0, 0))[0]).total_second() <= delay
+                                if streak == 2 and (timestamp - prev.get("time", (0, 0))[0]).total_second() <= delay:
                                     num = 0
                                     for role in previous_user.roles:
                                         if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
