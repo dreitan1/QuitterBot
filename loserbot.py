@@ -48,16 +48,19 @@ def run_bot(state):
         try:
             await asyncio.sleep(delay)
             if num == 0:
-                role = discord.utils.get(user.guild.roles, name=f"{pref}")
+                role_name = f"{pref}"
             else:
-                role = discord.utils.get(user.guild.roles, name=f"{pref} x{num}")
+                role_name = f"{pref} x{num}"
+
+            role = discord.utils.get(user.guild.roles, name=role_name)
+
             if role:
                 await user.add_roles(role)
             else:
-                cxt.guild.create_role(name=role)
+                cxt.guild.create_role(name=role_name)
                 await user.add_roles(role)
             
-            del scheduled_tasks[user.id]
+            scheduled_tasks.pop(user.id, None)
 
             await discord.utils.get(cxt.guild.channels, name=log_channel).send(f"Assigned role {role.name} to {user.name}")
         except asyncio.CancelledError:
@@ -65,12 +68,15 @@ def run_bot(state):
         except KeyError:
             pass
 
+    # Checks if a discord user riot name or is registered
     def is_user_registered(name):
         with open(registry, 'r') as f:
             contents = f.read()
-            if name not in contents:
-                return False
-        return True
+            name_contents = contents.split(',')[1::3]
+            user_contents = contents.split(',')[0::3]
+            if name in name_contents or name in user_contents:
+                return True
+        return False
     
     def get_user_from_name(name):
         with open(registry, 'r') as f:
@@ -80,127 +86,148 @@ def run_bot(state):
                 user = [line for line in contents if name in line][0].split(',')[1]
                 return user
         return None
+    
+    async def update_balance(user, amount):
+        with open(registry, 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            line = line.strip()
+            name, tmp_user, balance = line.split(',')
+            if tmp_user == user:
+                balance = int(balance) + amount
+                lines[lines.index(line + '\n')] = f"{name},{user},{balance}\n"
+                break
+        with registry_lock:
+            with open(registry, 'w') as f:
+                f.writelines(lines)
+    
+    async def handle_match_update(msg):
+        name = msg.author.name
+        channel = "" if msg.channel is None else msg.channel.name
+            
+        if is_user_registered(name):
+            user = get_user_from_name(name)
+        else:
+            return
+        
+        timestamp = msg.created_at.replace(second=0, microsecond=0)
+        duration = msg.embeds[0].to_dict()['author']['name'][1:msg.embeds[0].to_dict()['author']['name'].find("•")-1]
+
+        discord_user = msg.guild.get_member_named(user)
+        if discord_user is None:
+            return
+
+        games_by_time.setdefault((timestamp, duration), []).append(discord_user.id)
+
+        prev = last_games.get(discord_user.id, {})
+        task = scheduled_tasks.pop(discord_user.id, None)
+        if task and prev.get("result", "") == "Defeat":
+            task.cancel()
+
+        print(f"Updating for {name}")
+
+        win_check = msg.embeds[0].description
+
+        # Victory
+        if ":2_:" in win_check:
+            await update_balance(user, 100)
+
+            streak = prev.get("streak", 0) + 1 if prev.get("result", "") == "Victory" and (timestamp - prev.get("time", (0, 0))[0]).total_seconds() <= delay else 1
+            last_games[discord_user.id] = {"result": "Victory", "streak": streak, "time": (timestamp, duration)}
+            if streak == 2 and prev.get("time", 0) != 0 and (timestamp - prev.get("time", (0, 0))[0]).total_seconds() <= delay:
+                # Increment winner tag, remove previous winner tag and assign incremented one
+                if len(games_by_time.get((timestamp, duration), [])) > 1:
+                    if len(games_by_time.get((timestamp, duration), [])) == 2:
+                        num = 0
+                        for role in discord_user.roles:
+                            if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
+                                try:
+                                    num = int(role.name.split("x")[1]) + 1
+                                except:
+                                    pass
+                            elif role.name == "winner":
+                                num = 2
+                        task = asyncio.create_task(add_role_after_delay(msg, discord_user, "winner", num, delay))
+                        scheduled_tasks[discord_user.id] = task
+                        previous_user = games_by_time.get((timestamp, duration), [])[0] if discord_user.id == games_by_time.get((timestamp, duration), [])[1] else games_by_time.get((timestamp, duration), [])[1]
+                        previous_user = msg.guild.get_member(previous_user)
+                        prev = last_games.get(previous_user.id, {})
+                        streak = prev.get("streak", 0) + 1 if prev.get("result", "") == "Victory" else 1
+                        if streak == 2 and prev.get("time", 0) != 0 and (timestamp - prev.get("time", (0, 0))[0]).total_seconds() <= delay:
+                            num = 0
+                            for role in previous_user.roles:
+                                if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
+                                    try:
+                                        num = int(role.name.split("x")[1]) + 1
+                                    except:
+                                        pass
+                                elif role.name == "winner":
+                                    num = 2
+                            task = asyncio.create_task(add_role_after_delay(msg, previous_user, "winner", num, delay))
+                            scheduled_tasks[previous_user.id] = task
+                    else:
+                        num = 0
+                        for role in discord_user.roles:
+                            if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
+                                try:
+                                    num = int(role.name.split("x")[1]) + 1
+                                except:
+                                    pass
+                            elif role.name == "winner":
+                                num = 2
+                        task = asyncio.create_task(add_role_after_delay(msg, discord_user, "winner", num, delay))
+                        scheduled_tasks[discord_user.id] = task
+        # Defeat
+        elif ":d_2:" in win_check:
+            await update_balance(user, 50)
+
+            last_games[discord_user.id] = {"result": "Defeat", "streak": 0, "time": (timestamp, duration)}
+            # Increment quitter tag, remove previous quitter tag and assign incremented one
+            if len(games_by_time.get((timestamp, duration), [])) > 1 or (task and prev.get("result", "") == "Defeat"):
+                if len(games_by_time.get((timestamp, duration), [])) == 2:
+                    num = 0
+                    for role in discord_user.roles:
+                        if role.name.startswith("quitter x") and int(role.name.split("x")[1]) + 1 > num:
+                            try:
+                                num = int(role.name.split("x")[1]) + 1
+                            except:
+                                pass
+                        elif role.name == "quitter":
+                            num = 2
+                    task = asyncio.create_task(add_role_after_delay(msg, discord_user, "quitter", num, delay))
+                    scheduled_tasks[discord_user.id] = task
+                    previous_user = games_by_time.get((timestamp, duration), [])[0] if discord_user.id == games_by_time.get((timestamp, duration), [])[1] else games_by_time.get((timestamp, duration), [])[1]
+                    previous_user = msg.guild.get_member(previous_user)
+                    num = 0
+                    for role in previous_user.roles:
+                        if role.name.startswith("quitter x") and int(role.name.split("x")[1]) + 1 > num:
+                            try:
+                                num = int(role.name.split("x")[1]) + 1
+                            except:
+                                pass
+                        elif role.name == "quitter":
+                            num = 2
+                    task = asyncio.create_task(add_role_after_delay(msg, previous_user, "quitter", num, delay))
+                    scheduled_tasks[previous_user.id] = task
+                else:
+                    num = 0
+                    for role in discord_user.roles:
+                        if role.name.startswith("quitter x") and int(role.name.split("x")[1]) + 1 > num:
+                            try:
+                                num = int(role.name.split("x")[1]) + 1
+                            except:
+                                pass
+                        elif role.name == "quitter":
+                            num = 2
+                    task = asyncio.create_task(add_role_after_delay(msg, discord_user, "quitter", num, delay))
+                    scheduled_tasks[discord_user.id] = task
 
     @client.event
     async def on_message(msg):
         # If an update was sent to the match-history channel, update tags appropriately
         channel = "" if msg.channel is None else msg.channel.name
-        for _ in range(1):
-            if channel == "match-history" and msg.author.bot:
-                name = msg.author.name
-                
-                if is_user_registered(name):
-                    user = get_user_from_name(name)
-                else:
-                    break
-                
-                timestamp = msg.created_at.replace(second=0, microsecond=0)
-                duration = msg.embeds[0].to_dict()['author']['name'][1:msg.embeds[0].to_dict()['author']['name'].find("•")-1]
-
-                discord_user = msg.guild.get_member_named(user)
-                if discord_user is None:
-                    break
-
-                games_by_time.setdefault((timestamp, duration), []).append(discord_user.id)
-
-                prev = last_games.get(discord_user.id, {})
-                task = scheduled_tasks.pop(discord_user.id, None)
-                if task and prev.get("result", "") == "Defeat":
-                    task.cancel()
-
-                print(f"Updating for {name}")
-
-                win_check = msg.embeds[0].description
-
-                # Victory
-                if ":2_:" in win_check:
-                    streak = prev.get("streak", 0) + 1 if prev.get("result", "") == "Victory" else 1
-                    last_games[discord_user.id] = {"result": "Victory", "streak": streak, "time": (timestamp, duration)}
-                    if streak == 2 and (timestamp - prev.get("time", (0, 0))[0]).total_second() <= delay:
-                        # Increment winner tag, remove previous winner tag and assign incremented one
-                        if len(games_by_time.get((timestamp, duration), [])) > 1:
-                            if len(games_by_time.get((timestamp, duration), [])) == 2:
-                                num = 0
-                                for role in discord_user.roles:
-                                    if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
-                                        try:
-                                            num = int(role.name.split("x")[1]) + 1
-                                        except:
-                                            pass
-                                    elif role.name == "winner":
-                                        num = 2
-                                task = asyncio.create_task(add_role_after_delay(msg, discord_user, "winner", num, delay))
-                                scheduled_tasks[discord_user.id] = task
-                                previous_user = games_by_time.get((timestamp, duration), [])[0] if discord_user.id == games_by_time.get((timestamp, duration), [])[1] else games_by_time.get((timestamp, duration), [])[1]
-                                previous_user = msg.guild.get_member(previous_user)
-                                prev = last_games.get(previous_user.id, {})
-                                streak = prev.get("streak", 0) + 1 if prev.get("result", "") == "Victory" else 1
-                                if streak == 2 and (timestamp - prev.get("time", (0, 0))[0]).total_second() <= delay:
-                                    num = 0
-                                    for role in previous_user.roles:
-                                        if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
-                                            try:
-                                                num = int(role.name.split("x")[1]) + 1
-                                            except:
-                                                pass
-                                        elif role.name == "winner":
-                                            num = 2
-                                    task = asyncio.create_task(add_role_after_delay(msg, previous_user, "winner", num, delay))
-                                    scheduled_tasks[previous_user.id] = task
-                            else:
-                                num = 0
-                                for role in discord_user.roles:
-                                    if role.name.startswith("winner x") and int(role.name.split("x")[1]) + 1 > num:
-                                        try:
-                                            num = int(role.name.split("x")[1]) + 1
-                                        except:
-                                            pass
-                                    elif role.name == "winner":
-                                        num = 2
-                                task = asyncio.create_task(add_role_after_delay(msg, discord_user, "winner", num, delay))
-                                scheduled_tasks[discord_user.id] = task
-                # Defeat
-                elif ":d_2:" in win_check:
-                    last_games[discord_user.id] = {"result": "Defeat", "streak": 0, "time": (timestamp, duration)}
-                    # Increment quitter tag, remove previous quitter tag and assign incremented one
-                    if len(games_by_time.get((timestamp, duration), [])) > 1 or (task and prev.get("result", "") == "Defeat"):
-                        if len(games_by_time.get((timestamp, duration), [])) == 2:
-                            num = 0
-                            for role in discord_user.roles:
-                                if role.name.startswith("quitter x") and int(role.name.split("x")[1]) + 1 > num:
-                                    try:
-                                        num = int(role.name.split("x")[1]) + 1
-                                    except:
-                                        pass
-                                elif role.name == "quitter":
-                                    num = 2
-                            task = asyncio.create_task(add_role_after_delay(msg, discord_user, "quitter", num, delay))
-                            scheduled_tasks[discord_user.id] = task
-                            previous_user = games_by_time.get((timestamp, duration), [])[0] if discord_user.id == games_by_time.get((timestamp, duration), [])[1] else games_by_time.get((timestamp, duration), [])[1]
-                            previous_user = msg.guild.get_member(previous_user)
-                            num = 0
-                            for role in previous_user.roles:
-                                if role.name.startswith("quitter x") and int(role.name.split("x")[1]) + 1 > num:
-                                    try:
-                                        num = int(role.name.split("x")[1]) + 1
-                                    except:
-                                        pass
-                                elif role.name == "quitter":
-                                    num = 2
-                            task = asyncio.create_task(add_role_after_delay(msg, previous_user, "quitter", num, delay))
-                            scheduled_tasks[previous_user.id] = task
-                        else:
-                            num = 0
-                            for role in discord_user.roles:
-                                if role.name.startswith("quitter x") and int(role.name.split("x")[1]) + 1 > num:
-                                    try:
-                                        num = int(role.name.split("x")[1]) + 1
-                                    except:
-                                        pass
-                                elif role.name == "quitter":
-                                    num = 2
-                            task = asyncio.create_task(add_role_after_delay(msg, discord_user, "quitter", num, delay))
-                            scheduled_tasks[discord_user.id] = task
+        if channel == "match-history" and msg.author.bot:
+            await handle_match_update(msg)
 
         await client.process_commands(msg)
 
@@ -218,7 +245,9 @@ def run_bot(state):
                                     "&unregister [NAME]#[TAG]: unlink league account\n"+
                                     "&exchange: lose a quitter tag in exchange for 3 winner tags, if available\n"+
                                     "&leaderboard: displays the top quitters/winners\n"+
-                                    "&minecraft: receive the 'miner' role")
+                                    "&minecraft: receive the 'miner' role\n"+
+                                    "&bet [DISCORD USER] [win/loss] [wager]: Bet on a user's next game!\n"+
+                                    "&balance: Check your GamerCoin\u2122 balance")
 
     @commands.command(name='test')
     async def test(cxt):
@@ -259,7 +288,7 @@ def run_bot(state):
                 return
             
             with open(registry, 'a') as f:
-                f.write(name + "," + user + '\n')
+                f.write(f"{name},{user},0\n")
         
         await cxt.message.channel.send("Registered " + user + " as " + name)
         return
@@ -429,6 +458,27 @@ def run_bot(state):
         if role:
             await user.add_roles(role)
 
+    @commands.command(name="balance")
+    async def balance(cxt):
+        user = cxt.message.author.name
+        if not is_user_registered(user):
+            await cxt.message.channel.send("You are not registered. Register with &register")
+            return
+        
+        with open(registry, 'r') as f:
+            contents = f.read()
+            contents = contents.split('\n')
+            pair = [line for line in contents if user in line][0].split(',')
+            balance = pair[2]
+        
+        await cxt.message.channel.send(f"{user} has {balance} GamerCoin\u2122")
+        return
+    
+    @commands.command(name="bet")
+    async def bet(cxt):
+        await cxt.message.channel.send("Betting is not yet implemented")
+        return
+
     client.add_command(help)
     client.add_command(register)
     client.add_command(unregister)
@@ -438,5 +488,7 @@ def run_bot(state):
     client.add_command(kill)
     # client.add_command(test)
     client.add_command(minecraft)
+    client.add_command(balance)
+    client.add_command(bet)
 
     client.run(bot_key)
